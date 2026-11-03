@@ -44,4 +44,22 @@ class SiteAuditV11Tests(unittest.TestCase):
     def test_http_resource_warning(self): self.assertIn('INSECURE_RESOURCE',codes(GOOD.replace('</head>','<script src="http://example.org/a.js"></script></head>'),'warning'))
     def test_password_autocomplete_warning(self): self.assertIn('PASSWORD_AUTOCOMPLETE',codes(GOOD.replace('</form>','<label for="pw">Password</label><input id="pw" type="password"></form>'),'warning'))
 
+
+    def test_unsafe_form_action_javascript(self): self.assertIn('UNSAFE_FORM_ACTION',codes(GOOD.replace('<form>','<form action="javascript:alert(1)">')))
+    def test_unsafe_form_action_data(self): self.assertIn('UNSAFE_FORM_ACTION',codes(GOOD.replace('<form>','<form action="data:text/html,evil">')))
+    def test_form_action_http_warning(self): self.assertIn('INSECURE_FORM_ACTION',codes(GOOD.replace('<form>','<form action="http://example.org/send">'),'warning'))
+    def test_safe_form_action(self): self.assertNotIn('UNSAFE_FORM_ACTION',codes(GOOD.replace('<form>','<form action="/send">')))
+    def test_unsafe_formaction_button(self): self.assertIn('UNSAFE_FORM_ACTION',codes(GOOD.replace('<button>','<button formaction="javascript:alert(1)">')))
+    def test_unsafe_formaction_image(self): self.assertIn('UNSAFE_FORM_ACTION',codes(GOOD.replace('</form>','<input type="image" alt="Send" formaction="data:text/html,x"></form>')))
+    def test_unsafe_iframe_url(self): self.assertIn('UNSAFE_IFRAME_URL',codes(GOOD.replace('</main>','<iframe title="Test" src="javascript:alert(1)"></iframe></main>')))
+    def test_safe_iframe_url(self): self.assertNotIn('UNSAFE_IFRAME_URL',codes(GOOD.replace('</main>','<iframe title="Test" src="/embed"></iframe></main>')))
+    def test_unsafe_script_source(self): self.assertIn('UNSAFE_RESOURCE_URL',codes(GOOD.replace('</head>','<script src="data:text/javascript,alert(1)"></script></head>')))
+    def test_unsafe_stylesheet_source(self): self.assertIn('UNSAFE_RESOURCE_URL',codes(GOOD.replace('</head>','<link href="javascript:evil()" rel="stylesheet"></head>')))
+    def test_image_input_without_name(self): self.assertIn('UNLABELED_CONTROL',codes(GOOD.replace('</form>','<input type="image" src="submit.png"></form>')))
+    def test_image_input_with_alt(self): self.assertNotIn('UNLABELED_CONTROL',codes(GOOD.replace('</form>','<input type="image" src="submit.png" alt="送信"></form>')))
+    def test_plain_button_input_without_value(self): self.assertIn('UNLABELED_CONTROL',codes(GOOD.replace('</form>','<input type="button"></form>')))
+    def test_plain_button_input_with_value(self): self.assertNotIn('UNLABELED_CONTROL',codes(GOOD.replace('</form>','<input type="button" value="送信"></form>')))
+    def test_zoom_disabled_warning(self): self.assertIn('ZOOM_DISABLED',codes(GOOD.replace('width=device-width, initial-scale=1','width=device-width, user-scalable=no'),'warning'))
+    def test_zoom_allowed(self): self.assertNotIn('ZOOM_DISABLED',codes(GOOD))
+
 if __name__ == '__main__': unittest.main()
