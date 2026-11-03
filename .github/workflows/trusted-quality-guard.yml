@@ -1,6 +1,6 @@
 # DEMONSTRATION ONLY. Strictly read-only inspection of PR metadata and HTML.
 # Runs code from the protected default branch base commit, NOT from the candidate PR.
-name: trusted-quality-guard-demo
+name: trusted-quality-guard-demo # unauthorized-tamper-test
 on:
   pull_request_target:
     types: [opened, reopened, synchronize, ready_for_review, edited]
