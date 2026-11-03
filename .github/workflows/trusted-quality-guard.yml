@@ -1,0 +1,31 @@
+# DEMONSTRATION ONLY. Strictly read-only inspection of PR metadata and HTML.
+# Runs code from the protected default branch base commit, NOT from the candidate PR.
+name: trusted-quality-guard-demo
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, ready_for_review, edited]
+    branches: [main]
+permissions:
+  contents: read
+  pull-requests: read
+jobs:
+  trusted-demo-check:
+    name: trusted-demo-check
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Fetch only reviewed base policy
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+          path: policy
+      - name: Test the baseline verifier
+        env:
+          PYTHONPATH: policy
+        run: python3 -m unittest discover -s policy/qa -p 'test_*.py' -t policy -v
+      - name: Read-only candidate inspection via GitHub API
+        env:
+          PYTHONPATH: policy
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 policy/qa/trusted_pr_gate.py
