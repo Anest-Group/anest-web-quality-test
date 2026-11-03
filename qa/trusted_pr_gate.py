@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Read-only PR verifier run from a trusted base SHA. DEMO ONLY."""
+"""TEST: unauthorized checker modification. DO NOT MERGE."""
 import base64
 import json
 import os
