@@ -17,7 +17,7 @@ from urllib.parse import unquote
 MAX_INPUT_BYTES = 512_000
 UNSAFE_SCHEMES = {"javascript", "vbscript", "data", "file"}
 INTERACTIVE_TAGS = {"input", "select", "textarea"}
-UNLABELED_INPUT_TYPES = {"hidden", "button", "reset", "submit", "image"}
+UNLABELED_INPUT_TYPES = {"hidden", "reset", "submit"}
 
 
 @dataclass(frozen=True)
@@ -99,12 +99,21 @@ class SiteAudit(HTMLParser):
             key = (data.get("name") or "").strip().lower()
             if key == "viewport" and (data.get("content") or "").strip():
                 self.has_viewport = True
+                viewport = (data["content"] or "").lower()
+                if re.search(r"user-scalable\s*=\s*[\x27\x22]?(?:no|0)\b", viewport):
+                    self.add("warning", "ZOOM_DISABLED", "Do not disable user zoom on mobile", line)
             if key == "description" and (data.get("content") or "").strip():
                 self.has_description = True
         elif tag == "main":
             self.main_count += 1
         elif tag == "h1":
             self.h1_count += 1
+        elif tag == "form":
+            action = (data.get("action") or "").strip()
+            if self._scheme(action) in UNSAFE_SCHEMES:
+                self.add("error", "UNSAFE_FORM_ACTION", "Form action uses an unsafe URL scheme", line)
+            elif action.lower().startswith("http://"):
+                self.add("warning", "INSECURE_FORM_ACTION", "Form action uses plain HTTP", line)
         elif tag == "img":
             if "alt" not in data:
                 self.add("error", "MISSING_IMG_ALT", "Image has no alt attribute", line)
@@ -116,7 +125,12 @@ class SiteAudit(HTMLParser):
         elif tag in INTERACTIVE_TAGS:
             type_ = (data.get("type") or "text").strip().lower()
             if tag != "input" or type_ not in UNLABELED_INPUT_TYPES:
-                self.inputs.append((tag, type_, element_id, (data.get("aria-label") or "").strip(), (data.get("aria-labelledby") or "").strip(), self.open_labels > 0, line))
+                accessible_name = (data.get("aria-label") or "").strip()
+                if tag == "input" and type_ == "button":
+                    accessible_name = accessible_name or (data.get("value") or "").strip()
+                if tag == "input" and type_ == "image":
+                    accessible_name = accessible_name or (data.get("alt") or "").strip()
+                self.inputs.append((tag, type_, element_id, accessible_name, (data.get("aria-labelledby") or "").strip(), self.open_labels > 0, line))
             if tag == "input" and type_ == "password" and data.get("autocomplete") is None:
                 self.add("warning", "PASSWORD_AUTOCOMPLETE", "Password control should declare an appropriate autocomplete value", line)
         elif tag == "button":
@@ -142,8 +156,14 @@ class SiteAudit(HTMLParser):
             self.link_stack.append(anchor)
         elif tag in ("script", "link"):
             url = data.get("src") if tag == "script" else data.get("href")
-            if url and (url.startswith("http://") or self._scheme(url) in UNSAFE_SCHEMES):
-                self.add("warning", "INSECURE_RESOURCE", f"Review {tag} resource reference", line)
+            if url and self._scheme(url) in UNSAFE_SCHEMES:
+                self.add("error", "UNSAFE_RESOURCE_URL", f"Unsafe {tag} resource URL", line)
+            elif url and url.lower().startswith("http://"):
+                self.add("warning", "INSECURE_RESOURCE", f"Review insecure {tag} resource reference", line)
+        if tag in ("button", "input") and self._scheme(data.get("formaction") or "") in UNSAFE_SCHEMES:
+            self.add("error", "UNSAFE_FORM_ACTION", "Submit control has unsafe formaction URL", line)
+        if tag == "iframe" and self._scheme(data.get("src") or "") in UNSAFE_SCHEMES:
+            self.add("error", "UNSAFE_IFRAME_URL", "Iframe uses an unsafe source URL", line)
         for key in names:
             if key.startswith("on") and len(key) > 2:
                 self.add("warning", "INLINE_HANDLER", "Inline event handler requires security review", line)
