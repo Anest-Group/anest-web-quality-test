@@ -1,0 +1,47 @@
+import unittest
+from qa.site_audit_v11 import audit_text
+
+GOOD = '''<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Example"><title>Valid page</title></head><body><main id="main"><h1>Heading</h1><a href="#main">Main</a><img src="a.webp" alt="Product photo"><form><label for="email">Email</label><input type="email" id="email"></form><button>Submit</button></main></body></html>'''
+
+def codes(text, severity=None):
+    return {f.code for f in audit_text(text) if severity is None or f.severity == severity}
+
+class SiteAuditV11Tests(unittest.TestCase):
+    def test_valid_has_no_findings(self): self.assertEqual(audit_text(GOOD), [])
+    def test_missing_html_lang(self): self.assertIn('MISSING_LANG', codes(GOOD.replace('lang="ja"','')))
+    def test_no_head(self): self.assertIn('HEAD_COUNT', codes(GOOD.replace('<head>', '<template>').replace('</head>', '</template>')))
+    def test_no_title(self): self.assertIn('MISSING_TITLE', codes(GOOD.replace('Valid page','')))
+    def test_no_main(self): self.assertIn('MAIN_COUNT', codes(GOOD.replace('<main id="main">','<section id="main">').replace('</main>','</section>')))
+    def test_duplicate_attrs(self): self.assertIn('DUPLICATE_ATTRIBUTE',codes(GOOD.replace('id="main"','id="main" id="two"')))
+    def test_duplicate_id(self): self.assertIn('DUPLICATE_ID',codes(GOOD.replace('id="email"','id="main"')))
+    def test_missing_alt(self): self.assertIn('MISSING_IMG_ALT',codes(GOOD.replace('alt="Product photo"','')))
+    def test_decorative_alt_allowed(self): self.assertNotIn('MISSING_IMG_ALT',codes(GOOD.replace('alt="Product photo"','alt=""')))
+    def test_missing_src_warning(self): self.assertIn('MISSING_IMG_SRC',codes(GOOD.replace('src="a.webp"',''),'warning'))
+    def test_missing_description_warning(self): self.assertIn('MISSING_DESCRIPTION',codes(GOOD.replace('<meta name="description" content="Example">',''),'warning'))
+    def test_missing_viewport_warning(self): self.assertIn('MISSING_VIEWPORT',codes(GOOD.replace('<meta name="viewport" content="width=device-width, initial-scale=1">',''),'warning'))
+    def test_missing_charset_warning(self): self.assertIn('MISSING_CHARSET',codes(GOOD.replace('<meta charset="utf-8">',''),'warning'))
+    def test_bad_fragment_warning(self): self.assertIn('BROKEN_FRAGMENT',codes(GOOD.replace('href="#main"','href="#missing"'),'warning'))
+    def test_good_fragment(self): self.assertNotIn('BROKEN_FRAGMENT',codes(GOOD))
+    def test_unsafe_javascript(self): self.assertIn('UNSAFE_URL_SCHEME',codes(GOOD.replace('href="#main"','href="javascript:alert(1)"')))
+    def test_unsafe_control_char_scheme(self): self.assertIn('UNSAFE_URL_SCHEME',codes(GOOD.replace('href="#main"','href="java&#10;script:alert(1)"')))
+    def test_unsafe_data_scheme(self): self.assertIn('UNSAFE_URL_SCHEME',codes(GOOD.replace('href="#main"','href="data:text/html,hello"')))
+    def test_blank_target_warning(self): self.assertIn('MISSING_NOOPENER',codes(GOOD.replace('href="#main"','href="https://example.org" target="_blank"'),'warning'))
+    def test_blank_target_with_rel(self): self.assertNotIn('MISSING_NOOPENER',codes(GOOD.replace('href="#main"','href="https://example.org" target="_blank" rel="noopener"')))
+    def test_unlabeled_control(self): self.assertIn('UNLABELED_CONTROL',codes(GOOD.replace('<label for="email">Email</label>','')))
+    def test_wrapping_label(self): self.assertNotIn('UNLABELED_CONTROL',codes(GOOD.replace('<label for="email">Email</label><input type="email" id="email">','<label>Email <input type="email" id="email"></label>')))
+    def test_aria_label_control(self): self.assertNotIn('UNLABELED_CONTROL',codes(GOOD.replace('<label for="email">Email</label>','').replace('id="email"','id="email" aria-label="Email"')))
+    def test_aria_labelledby_control(self): self.assertNotIn('UNLABELED_CONTROL', codes(GOOD.replace('<label for="email">Email</label>','').replace('id="email"','id="email" aria-labelledby="main"')))
+    def test_broken_aria_reference(self): self.assertIn('BROKEN_ARIA_REFERENCE',codes(GOOD.replace('id="email"','id="email" aria-describedby="missing"')))
+    def test_valid_aria_reference(self): self.assertNotIn('BROKEN_ARIA_REFERENCE',codes(GOOD.replace('id="email"','id="email" aria-describedby="main"')))
+    def test_submit_input_exempt(self): self.assertNotIn('UNLABELED_CONTROL',codes(GOOD.replace('<label for="email">Email</label><input type="email" id="email">','<input type="submit" value="Send">')))
+    def test_unnamed_button(self): self.assertIn('UNNAMED_BUTTON',codes(GOOD.replace('<button>Submit</button>','<button></button>')))
+    def test_button_aria_labelledby(self): self.assertNotIn('UNNAMED_BUTTON',codes(GOOD.replace('<button>Submit</button>','<button aria-labelledby="main"></button>')))
+    def test_named_button_aria(self): self.assertNotIn('UNNAMED_BUTTON',codes(GOOD.replace('<button>Submit</button>','<button aria-label="Submit"></button>')))
+    def test_empty_link_warning(self): self.assertIn('UNNAMED_LINK',codes(GOOD.replace('>Main</a>','></a>'),'warning'))
+    def test_image_link_named(self): self.assertNotIn('UNNAMED_LINK',codes(GOOD.replace('<a href="#main">Main</a>','<a href="#main"><img src="img.png" alt="Go main"></a>')))
+    def test_iframe_title(self): self.assertIn('UNNAMED_IFRAME',codes(GOOD.replace('</main>','<iframe src="https://example.org"></iframe></main>')))
+    def test_inline_handler_warning(self): self.assertIn('INLINE_HANDLER',codes(GOOD.replace('<button>','<button onclick="alert(1)">'),'warning'))
+    def test_http_resource_warning(self): self.assertIn('INSECURE_RESOURCE',codes(GOOD.replace('</head>','<script src="http://example.org/a.js"></script></head>'),'warning'))
+    def test_password_autocomplete_warning(self): self.assertIn('PASSWORD_AUTOCOMPLETE',codes(GOOD.replace('</form>','<label for="pw">Password</label><input id="pw" type="password"></form>'),'warning'))
+
+if __name__ == '__main__': unittest.main()
