@@ -1,0 +1,22 @@
+name: quality-preview-demo
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  demo-static-check:
+    name: demo-static-check
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Python version
+        run: python3 --version
+      - name: Demo smoke checks (not a release verdict)
+        run: |
+          python3 qa/demo_gate.py site/index.html
+          python3 -m unittest discover -s qa -p 'test_*.py' -t . -v
