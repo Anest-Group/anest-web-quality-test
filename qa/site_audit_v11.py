@@ -263,17 +263,32 @@ class SiteAudit(HTMLParser):
         for id_, line in self.fragments:
             if id_ not in self.ids:
                 self.add("warning", "BROKEN_FRAGMENT", f"In-page link refers to missing id: {id_}", line)
-        for tag, type_, id_, aria_label, aria_labelledby, inside_label, line in self.inputs:
-            has_aria_reference = bool(aria_labelledby and all(ref in self.ids for ref in aria_labelledby.split()))
-            if inside_label or aria_label or has_aria_reference or (id_ and id_ in self.label_for):
+        if self.open_tags:
+            for tag, start_line in self.open_tags:
+                self.add("error", "UNCLOSED_HTML_TAG", f"Unclosed <{tag}>", start_line)
+        def has_labelledby(value: str) -> bool:
+            if not value:
+                return False
+            targets = value.split()
+            return all(target in self.ids for target in targets) and bool(
+                "".join("".join(self.element_names.get(target, [])) for target in targets).strip()
+            )
+        label_text_by_id: dict[str, list[str]] = {}
+        for label in self.labels:
+            if label["for"]:
+                label_text_by_id.setdefault(label["for"], []).append("".join(label["text"]).strip())
+        for control in self.inputs:
+            label_text = any("".join(item["text"]).strip() for item in control["wrapping_labels"])
+            matching = any(label.strip() for label in label_text_by_id.get(control["id"], [])) if control["id"] else False
+            if label_text or matching or control["aria_label"] or has_labelledby(control["aria_labelledby"]):
                 continue
-            self.add("error", "UNLABELED_CONTROL", f"<{tag}> ({type_}) needs an accessible label", line)
+            self.add("error", "UNLABELED_CONTROL", f'<{control["tag"]}> ({control["type"]}) needs a non-empty accessible label', control["line"])
         for button in self.buttons:
-            if not button["label"] and not button["labelledby"] and not "".join(button["text"]).strip():
+            if not button["label"] and not has_labelledby(button["labelledby"]) and not "".join(button["text"]).strip():
                 self.add("error", "UNNAMED_BUTTON", "Button needs an accessible name", button["line"])
         for link in self.links:
-            if not link["label"] and not link["labelledby"] and not "".join(link["text"]).strip() and not any(link["img_alt"]):
-                self.add("warning", "UNNAMED_LINK", "Link needs a discernible name", link["line"])
+            if not link["label"] and not has_labelledby(link["labelledby"]) and not "".join(link["text"]).strip() and not any(link["img_alt"]):
+                self.add("error", "UNNAMED_LINK", "Link needs a discernible name", link["line"])
         return sorted(self.findings, key=lambda v: (v.line, v.code))
 
 
