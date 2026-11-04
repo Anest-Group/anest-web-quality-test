@@ -2,7 +2,7 @@ import base64
 import unittest
 from qa.trusted_pr_gate import verify, VerificationError
 
-GOOD='<!doctype html><html lang="ja"><head><title>Good</title></head><body><main><h1>Hi</h1><img alt="" src="a.png"></main></body></html>'
+GOOD='<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="A safe demonstration page"><title>Good</title></head><body><main><h1>Hi</h1><img alt="" src="a.png"></main></body></html>'
 SHA='a'*40
 REPO='Anest-Group/anest-web-quality-test'
 
@@ -27,6 +27,20 @@ class TrustedPRTests(unittest.TestCase):
   with self.assertRaises(VerificationError):self.run_verify(e)
  def test_good(self):self.assertEqual(self.run_verify(entries())['result'],'PASS')
  def test_broken_html(self):self.rejects(entries(GOOD.replace(' alt=""','')))
+ def test_missing_viewport_warning_is_rejected(self):
+  self.rejects(entries(GOOD.replace('<meta name="viewport" content="width=device-width, initial-scale=1">','')))
+ def test_missing_description_warning_is_rejected(self):
+  self.rejects(entries(GOOD.replace('<meta name="description" content="A safe demonstration page">','')))
+ def test_empty_label_v11_is_rejected(self):
+  bad=GOOD.replace('<h1>Hi</h1>','<h1>Hi</h1><label for="email"></label><input id="email" type="email">')
+  self.rejects(entries(bad))
+ def test_unsafe_form_action_v11_is_rejected(self):
+  bad=GOOD.replace('<h1>Hi</h1>','<h1>Hi</h1><form action="javascript:alert(1)"><label for="email">Email</label><input id="email"></form>')
+  self.rejects(entries(bad))
+ def test_unnamed_link_v11_is_rejected(self):
+  self.rejects(entries(GOOD.replace('<h1>Hi</h1>','<h1>Hi</h1><a href="#x"></a>')))
+ def test_valid_v11_html_passes(self):
+  self.assertEqual(self.run_verify(entries())["result"],"PASS")
  def test_changed_policy(self):self.rejects(entries(files=[{'filename':'qa/trusted_pr_gate.py','status':'modified'}]))
  def test_changed_workflow(self):self.rejects(entries(files=[{'filename':'.github/workflows/quality-preview.yml','status':'modified'}]))
  def test_mismatched_head(self):
