@@ -37,7 +37,7 @@ class SiteAuditV11Tests(unittest.TestCase):
     def test_unnamed_button(self): self.assertIn('UNNAMED_BUTTON',codes(GOOD.replace('<button>Submit</button>','<button></button>')))
     def test_button_aria_labelledby(self): self.assertNotIn('UNNAMED_BUTTON',codes(GOOD.replace('<button>Submit</button>','<button aria-labelledby="main"></button>')))
     def test_named_button_aria(self): self.assertNotIn('UNNAMED_BUTTON',codes(GOOD.replace('<button>Submit</button>','<button aria-label="Submit"></button>')))
-    def test_empty_link_warning(self): self.assertIn('UNNAMED_LINK',codes(GOOD.replace('>Main</a>','></a>'),'warning'))
+    def test_empty_link_is_error(self): self.assertIn('UNNAMED_LINK',codes(GOOD.replace('>Main</a>','></a>'),'error'))
     def test_image_link_named(self): self.assertNotIn('UNNAMED_LINK',codes(GOOD.replace('<a href="#main">Main</a>','<a href="#main"><img src="img.png" alt="Go main"></a>')))
     def test_iframe_title(self): self.assertIn('UNNAMED_IFRAME',codes(GOOD.replace('</main>','<iframe src="https://example.org"></iframe></main>')))
     def test_inline_handler_warning(self): self.assertIn('INLINE_HANDLER',codes(GOOD.replace('<button>','<button onclick="alert(1)">'),'warning'))
@@ -61,5 +61,61 @@ class SiteAuditV11Tests(unittest.TestCase):
     def test_plain_button_input_with_value(self): self.assertNotIn('UNLABELED_CONTROL',codes(GOOD.replace('</form>','<input type="button" value="送信"></form>')))
     def test_zoom_disabled_warning(self): self.assertIn('ZOOM_DISABLED',codes(GOOD.replace('width=device-width, initial-scale=1','width=device-width, user-scalable=no'),'warning'))
     def test_zoom_allowed(self): self.assertNotIn('ZOOM_DISABLED',codes(GOOD))
+
+
+    def test_empty_label_for_rejected(self):
+        broken = GOOD.replace('<label for="email">Email</label>','<label for="email"></label>')
+        self.assertIn('UNLABELED_CONTROL', codes(broken, 'error'))
+
+    def test_whitespace_only_label_rejected(self):
+        broken = GOOD.replace('<label for="email">Email</label>','<label for="email">   </label>')
+        self.assertIn('UNLABELED_CONTROL', codes(broken, 'error'))
+
+    def test_empty_wrapping_label_rejected(self):
+        broken = GOOD.replace('<label for="email">Email</label><input type="email" id="email">','<label><input type="email" id="email"></label>')
+        self.assertIn('UNLABELED_CONTROL', codes(broken, 'error'))
+
+    def test_wrapping_label_text_allowed(self):
+        broken = GOOD.replace('<label for="email">Email</label><input type="email" id="email">','<label><strong>Email</strong><input type="email" id="email"></label>')
+        self.assertNotIn('UNLABELED_CONTROL', codes(broken, 'error'))
+
+    def test_empty_aria_labelledby_rejected(self):
+        broken = GOOD.replace('<label for="email">Email</label>','').replace('id="email"','id="email" aria-labelledby="empty"').replace('<h1>Heading</h1>','<h1>Heading</h1><span id="empty"></span>')
+        self.assertIn('UNLABELED_CONTROL', codes(broken, 'error'))
+
+    def test_aria_labelledby_heading_allowed(self):
+        broken = GOOD.replace('<label for="email">Email</label>','').replace('id="email"','id="email" aria-labelledby="heading"').replace('<h1>Heading</h1>','<h1 id="heading">Heading</h1>')
+        self.assertNotIn('UNLABELED_CONTROL', codes(broken, 'error'))
+
+    def test_image_only_button_has_name(self):
+        good = GOOD.replace('<button>Submit</button>', '<button><img src="send.png" alt="送信"></button>')
+        self.assertNotIn('UNNAMED_BUTTON', codes(good, 'error'))
+
+    def test_decorative_image_only_button_has_no_name(self):
+        bad = GOOD.replace('<button>Submit</button>', '<button><img src="send.png" alt=""></button>')
+        self.assertIn('UNNAMED_BUTTON', codes(bad, 'error'))
+
+    def test_misnested_required_tags(self):
+        bad = GOOD.replace('<button>Submit</button>', '<button><span>Submit</button></span>')
+        self.assertIn('MISNESTED_HTML', codes(bad, 'error'))
+
+    def test_unclosed_required_tag(self):
+        bad = GOOD.replace('<button>Submit</button>', '<button>Submit')
+        self.assertIn('UNCLOSED_HTML_TAG', codes(bad, 'error'))
+
+    def test_explicit_self_closing_required_tag(self):
+        bad = GOOD.replace('<button>Submit</button>', '<button/>')
+        self.assertIn('SELF_CLOSING_NONVOID', codes(bad, 'error'))
+
+    def test_void_tag_does_not_require_closing(self):
+        self.assertNotIn('UNCLOSED_HTML_TAG', codes(GOOD, 'error'))
+
+    def test_unnamed_link_is_error(self):
+        bad = GOOD.replace('>Main</a>', '></a>')
+        self.assertIn('UNNAMED_LINK', codes(bad, 'error'))
+
+    def test_image_link_alt_provides_name(self):
+        good = GOOD.replace('<a href="#main">Main</a>', '<a href="#main"><img src="nav.png" alt="Home"></a>')
+        self.assertNotIn('UNNAMED_LINK', codes(good, 'error'))
 
 if __name__ == '__main__': unittest.main()
