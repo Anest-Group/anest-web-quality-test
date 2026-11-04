@@ -211,6 +211,8 @@ class SiteAudit(HTMLParser):
                 matching = next((i for i in range(len(self.open_tags) - 1, -1, -1)
                                  if self.open_tags[i][0] == tag), None)
                 if matching is not None:
+                    for unclosed, start_line in self.open_tags[matching + 1:]:
+                        self.add("error", "UNCLOSED_HTML_TAG", f"Unclosed <{unclosed}> before </{tag}>", start_line)
                     del self.open_tags[matching:]
             else:
                 self.open_tags.pop()
