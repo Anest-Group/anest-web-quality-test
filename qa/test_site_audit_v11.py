@@ -199,4 +199,17 @@ class SiteAuditV11Tests(unittest.TestCase):
         ).replace('<h1>Heading</h1>', '<h1>Heading</h1><span id="image-name"><img src="name.png" alt=""></span>')
         self.assertIn('UNLABELED_CONTROL', codes(bad, 'error'))
 
+
+    def test_direct_image_id_alt_names_control(self):
+        good = GOOD.replace('<label for="email">Email</label>', '').replace(
+            'id="email"', 'id="email" aria-labelledby="image-name"'
+        ).replace('<h1>Heading</h1>', '<h1>Heading</h1><img id="image-name" src="name.png" alt="Email">')
+        self.assertNotIn('UNLABELED_CONTROL', codes(good, 'error'))
+
+    def test_direct_image_id_empty_alt_does_not_name_control(self):
+        bad = GOOD.replace('<label for="email">Email</label>', '').replace(
+            'id="email"', 'id="email" aria-labelledby="image-name"'
+        ).replace('<h1>Heading</h1>', '<h1>Heading</h1><img id="image-name" src="name.png" alt="">')
+        self.assertIn('UNLABELED_CONTROL', codes(bad, 'error'))
+
 if __name__ == '__main__': unittest.main()
