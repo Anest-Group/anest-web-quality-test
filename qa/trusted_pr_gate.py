@@ -10,6 +10,7 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 from qa.protected_gate import audit_html, audit_changed_files
+from qa.site_audit_v11 import audit_text
 
 API='https://api.github.com'
 MAX_HTML_BYTES=500_000
@@ -81,9 +82,23 @@ def verify(repo, pr_number, head_sha, token, fetch=api_get):
         html=raw.decode('utf-8')
     except (KeyError,ValueError,UnicodeError) as exc:
         raise VerificationError('invalid content bytes') from exc
-    errors=audit_html(html)
-    if errors:raise VerificationError('; '.join(errors))
-    return {'result':'PASS','head_sha':head_sha,'changed_files':names,'check':'trusted-demo-only'}
+    # Both checks execute ONLY from the trusted base revision checked out by
+    # pull_request_target, never from a PR-provided Python file.
+    errors = audit_html(html)
+    findings = audit_text(html)
+    # Strict v11 policy: warnings are blocking, not silently accepted.
+    problems = errors + [
+        f'{finding.severity.upper()} [{finding.code}] line {finding.line}: {finding.message}'
+        for finding in findings
+    ]
+    if problems:
+        raise VerificationError('; '.join(problems[:30]))
+    return {
+        'result': 'PASS',
+        'head_sha': head_sha,
+        'changed_files': names,
+        'check': 'trusted-demo-and-v11-strict-static-html',
+    }
 
 def main():
     repo=os.getenv('GITHUB_REPOSITORY','')
