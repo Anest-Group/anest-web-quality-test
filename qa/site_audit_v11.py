@@ -20,6 +20,7 @@ INTERACTIVE_TAGS = {"input", "select", "textarea"}
 UNLABELED_INPUT_TYPES = {"hidden", "reset", "submit"}
 # These elements require an explicit end tag in HTML; not a full HTML5 validator.
 REQUIRED_END_TAGS = {
+    "html", "head", "body", "title",
     "main", "div", "section", "article", "nav", "aside", "header", "footer",
     "form", "label", "button", "a", "span", "strong", "em",
     "h1", "h2", "h3", "h4", "h5", "h6", "ul", "ol", "table",
@@ -196,6 +197,8 @@ class SiteAudit(HTMLParser):
                 self.add("warning", "INLINE_HANDLER", "Inline event handler requires security review", line)
         if tag == "img":
             alt = (data.get("alt") or "").strip()
+            for _, referenced_id in self.named_element_stack:
+                self.element_names[referenced_id].append(alt)
             if self.link_stack:
                 self.link_stack[-1]["img_alt"].append(alt)
             if self.button_stack:
@@ -265,6 +268,10 @@ class SiteAudit(HTMLParser):
         for id_, line in self.fragments:
             if id_ not in self.ids:
                 self.add("warning", "BROKEN_FRAGMENT", f"In-page link refers to missing id: {id_}", line)
+        for label in self.labels:
+            if label["for"] and label["for"] not in self.ids:
+                self.add("error", "BROKEN_LABEL_REFERENCE",
+                         f'Label references missing id: {label["for"]}', label["line"])
         if self.open_tags:
             for tag, start_line in self.open_tags:
                 self.add("error", "UNCLOSED_HTML_TAG", f"Unclosed <{tag}>", start_line)
