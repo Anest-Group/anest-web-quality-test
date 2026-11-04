@@ -1,5 +1,11 @@
 import unittest
-from qa.site_audit_v11 import audit_text
+import contextlib
+from io import StringIO
+from pathlib import Path
+import sys
+import tempfile
+from unittest.mock import patch
+from qa.site_audit_v11 import audit_text, main
 
 GOOD = '''<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Example"><title>Valid page</title></head><body><main id="main"><h1>Heading</h1><a href="#main">Main</a><img src="a.webp" alt="Product photo"><form><label for="email">Email</label><input type="email" id="email"></form><button>Submit</button></main></body></html>'''
 
@@ -117,5 +123,48 @@ class SiteAuditV11Tests(unittest.TestCase):
     def test_image_link_alt_provides_name(self):
         good = GOOD.replace('<a href="#main">Main</a>', '<a href="#main"><img src="nav.png" alt="Home"></a>')
         self.assertNotIn('UNNAMED_LINK', codes(good, 'error'))
+
+
+    def _cli(self, html, *options):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'test.html'
+            path.write_text(html, encoding='utf-8')
+            stdout = StringIO()
+            with patch.object(sys, 'argv', ['site_audit_v11.py', str(path), *options]), contextlib.redirect_stdout(stdout):
+                result = main()
+            return result, stdout.getvalue()
+
+    def test_cli_valid_baseline_pass(self):
+        status, output = self._cli(GOOD)
+        self.assertEqual(status, 0)
+        self.assertIn('PASS', output)
+
+    def test_cli_required_error_fails(self):
+        status, output = self._cli(GOOD.replace('<title>Valid page</title>', ''))
+        self.assertEqual(status, 1)
+        self.assertIn('FAIL', output)
+
+    def test_cli_warning_default_is_visible_but_not_blocking(self):
+        status, output = self._cli(GOOD.replace('<meta name="description" content="Example">', ''))
+        self.assertEqual(status, 0)
+        self.assertIn('MISSING_DESCRIPTION', output)
+
+    def test_cli_warning_strict_fails(self):
+        status, output = self._cli(GOOD.replace('<meta name="description" content="Example">', ''), '--fail-on-warning')
+        self.assertEqual(status, 1)
+        self.assertIn('FAIL', output)
+
+    def test_cli_valid_strict_pass(self):
+        status, output = self._cli(GOOD, '--fail-on-warning')
+        self.assertEqual(status, 0)
+        self.assertIn('PASS', output)
+
+    def test_cli_json_failure(self):
+        import json
+        status, output = self._cli(GOOD.replace('<title>Valid page</title>', ''), '--json')
+        data = json.loads(output)
+        self.assertEqual(status, 1)
+        self.assertEqual(data["result"], "FAIL")
+        self.assertTrue(any(x["code"] == "MISSING_TITLE" for x in data["findings"]))
 
 if __name__ == '__main__': unittest.main()
