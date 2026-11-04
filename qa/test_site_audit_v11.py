@@ -168,9 +168,17 @@ class SiteAuditV11Tests(unittest.TestCase):
         self.assertTrue(any(x["code"] == "MISSING_TITLE" for x in data["findings"]))
 
 
-    def test_unclosed_document_head_rejected(self):
-        bad = GOOD.replace('</head>', '')
-        self.assertTrue({'MISNESTED_HTML','UNCLOSED_HTML_TAG'} & codes(bad, 'error'))
+    def test_optional_head_end_tag_not_false_rejected(self):
+        good = GOOD.replace('</head>', '')
+        self.assertFalse({'MISNESTED_HTML','UNCLOSED_HTML_TAG'} & codes(good, 'error'))
+
+    def test_optional_document_end_tags_not_false_rejected(self):
+        good = GOOD.replace('</head>', '').replace('</body>', '').replace('</html>', '')
+        self.assertFalse({'MISNESTED_HTML','UNCLOSED_HTML_TAG'} & codes(good, 'error'))
+
+    def test_misnested_explicit_section_tags_still_rejected(self):
+        bad = GOOD.replace('<h1>Heading</h1>', '<section><h1>Heading</section></h1>')
+        self.assertIn('MISNESTED_HTML', codes(bad, 'error'))
 
     def test_broken_label_target_rejected(self):
         bad = GOOD.replace('for="email"', 'for="absent"')
