@@ -200,6 +200,9 @@ class SiteAudit(HTMLParser):
                 self.add("warning", "INLINE_HANDLER", "Inline event handler requires security review", line)
         if tag == "img":
             alt = (data.get("alt") or "").strip()
+            if element_id:
+                # An <img id=... alt=...> can itself be an aria-labelledby target.
+                self.element_names[element_id].append(alt)
             for _, referenced_id in self.named_element_stack:
                 self.element_names[referenced_id].append(alt)
             if self.link_stack:
