@@ -18,9 +18,12 @@ MAX_INPUT_BYTES = 512_000
 UNSAFE_SCHEMES = {"javascript", "vbscript", "data", "file"}
 INTERACTIVE_TAGS = {"input", "select", "textarea"}
 UNLABELED_INPUT_TYPES = {"hidden", "reset", "submit"}
-# These elements require an explicit end tag in HTML; not a full HTML5 validator.
+# Subset of elements with required explicit end tags. HTML5 permits omission
+# of html/head/body end tags in some contexts; a lightweight preflight must not
+# reject such conforming documents as malformed.
+# This does NOT replace a conforming HTML5 tree builder and validator.
 REQUIRED_END_TAGS = {
-    "html", "head", "body", "title",
+    "title",
     "main", "div", "section", "article", "nav", "aside", "header", "footer",
     "form", "label", "button", "a", "span", "strong", "em",
     "h1", "h2", "h3", "h4", "h5", "h6", "ul", "ol", "table",
