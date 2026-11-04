@@ -167,4 +167,28 @@ class SiteAuditV11Tests(unittest.TestCase):
         self.assertEqual(data["result"], "FAIL")
         self.assertTrue(any(x["code"] == "MISSING_TITLE" for x in data["findings"]))
 
+
+    def test_unclosed_document_head_rejected(self):
+        bad = GOOD.replace('</head>', '')
+        self.assertTrue({'MISNESTED_HTML','UNCLOSED_HTML_TAG'} & codes(bad, 'error'))
+
+    def test_broken_label_target_rejected(self):
+        bad = GOOD.replace('for="email"', 'for="absent"')
+        self.assertIn('BROKEN_LABEL_REFERENCE', codes(bad, 'error'))
+
+    def test_valid_label_target_allowed(self):
+        self.assertNotIn('BROKEN_LABEL_REFERENCE', codes(GOOD, 'error'))
+
+    def test_image_alt_used_for_aria_labelledby(self):
+        good = GOOD.replace('<label for="email">Email</label>', '').replace(
+            'id="email"', 'id="email" aria-labelledby="image-name"'
+        ).replace('<h1>Heading</h1>', '<h1>Heading</h1><span id="image-name"><img src="name.png" alt="Email"></span>')
+        self.assertNotIn('UNLABELED_CONTROL', codes(good, 'error'))
+
+    def test_empty_image_alt_does_not_name_control(self):
+        bad = GOOD.replace('<label for="email">Email</label>', '').replace(
+            'id="email"', 'id="email" aria-labelledby="image-name"'
+        ).replace('<h1>Heading</h1>', '<h1>Heading</h1><span id="image-name"><img src="name.png" alt=""></span>')
+        self.assertIn('UNLABELED_CONTROL', codes(bad, 'error'))
+
 if __name__ == '__main__': unittest.main()
