@@ -18,6 +18,17 @@ MAX_INPUT_BYTES = 512_000
 UNSAFE_SCHEMES = {"javascript", "vbscript", "data", "file"}
 INTERACTIVE_TAGS = {"input", "select", "textarea"}
 UNLABELED_INPUT_TYPES = {"hidden", "reset", "submit"}
+# These elements require an explicit end tag in HTML; not a full HTML5 validator.
+REQUIRED_END_TAGS = {
+    "main", "div", "section", "article", "nav", "aside", "header", "footer",
+    "form", "label", "button", "a", "span", "strong", "em",
+    "h1", "h2", "h3", "h4", "h5", "h6", "ul", "ol", "table",
+    "fieldset", "legend", "select", "textarea",
+}
+VOID_TAGS = {
+    "area", "base", "br", "col", "embed", "hr", "img", "input",
+    "link", "meta", "param", "source", "track", "wbr",
+}
 
 
 @dataclass(frozen=True)
@@ -37,9 +48,12 @@ class SiteAudit(HTMLParser):
         self.ids: set[str] = set()
         self.id_references: list[tuple[str, str, int]] = []
         self.fragments: list[tuple[str, int]] = []
-        self.label_for: set[str] = set()
-        self.inputs: list[tuple[str, str, str, str, str, bool, int]] = []
-        self.open_labels = 0
+        self.labels: list[dict] = []
+        self.label_stack: list[dict] = []
+        self.inputs: list[dict] = []
+        self.element_names: dict[str, list[str]] = {}
+        self.named_element_stack: list[tuple[str, str]] = []
+        self.open_tags: list[tuple[str, int]] = []
         self.title_depth = 0
         self.title_text: list[str] = []
         self.head_count = 0
@@ -65,6 +79,8 @@ class SiteAudit(HTMLParser):
         return normalized.split(":", 1)[0] if ":" in normalized else ""
 
     def handle_startendtag(self, tag, attrs):
+        if tag in REQUIRED_END_TAGS:
+            self.add("error", "SELF_CLOSING_NONVOID", f"Self-closing <{tag}/> is not valid HTML syntax")
         self.handle_starttag(tag, attrs)
         self.handle_endtag(tag)
 
@@ -79,13 +95,18 @@ class SiteAudit(HTMLParser):
             if element_id in self.ids:
                 self.add("error", "DUPLICATE_ID", f"Duplicate id: {element_id}", line)
             self.ids.add(element_id)
+            self.element_names[element_id] = []
+            if tag not in VOID_TAGS:
+                self.named_element_stack.append((tag, element_id))
+        if tag in REQUIRED_END_TAGS:
+            self.open_tags.append((tag, line))
         for key in ("aria-labelledby", "aria-describedby"):
             for target in (data.get(key) or "").split():
                 self.id_references.append((target, key, line))
         if tag == "label":
-            self.open_labels += 1
-            if data.get("for"):
-                self.label_for.add(data["for"])
+            current_label = {"for": (data.get("for") or "").strip(), "text": [], "line": line}
+            self.labels.append(current_label)
+            self.label_stack.append(current_label)
         if tag == "html":
             self.has_lang = bool((data.get("lang") or "").strip())
         elif tag == "head":
@@ -130,7 +151,13 @@ class SiteAudit(HTMLParser):
                     accessible_name = accessible_name or (data.get("value") or "").strip()
                 if tag == "input" and type_ == "image":
                     accessible_name = accessible_name or (data.get("alt") or "").strip()
-                self.inputs.append((tag, type_, element_id, accessible_name, (data.get("aria-labelledby") or "").strip(), self.open_labels > 0, line))
+                self.inputs.append({
+                    "tag": tag, "type": type_, "id": element_id,
+                    "aria_label": accessible_name,
+                    "aria_labelledby": (data.get("aria-labelledby") or "").strip(),
+                    "wrapping_labels": tuple(self.label_stack),
+                    "line": line,
+                })
             if tag == "input" and type_ == "password" and data.get("autocomplete") is None:
                 self.add("warning", "PASSWORD_AUTOCOMPLETE", "Password control should declare an appropriate autocomplete value", line)
         elif tag == "button":
@@ -167,14 +194,35 @@ class SiteAudit(HTMLParser):
         for key in names:
             if key.startswith("on") and len(key) > 2:
                 self.add("warning", "INLINE_HANDLER", "Inline event handler requires security review", line)
-        if tag == "img" and self.link_stack:
-            self.link_stack[-1]["img_alt"].append((data.get("alt") or "").strip())
+        if tag == "img":
+            alt = (data.get("alt") or "").strip()
+            if self.link_stack:
+                self.link_stack[-1]["img_alt"].append(alt)
+            if self.button_stack:
+                self.button_stack[-1]["text"].append(alt)
+            for label in self.label_stack:
+                label["text"].append(alt)
 
     def handle_endtag(self, tag):
+        if tag in REQUIRED_END_TAGS:
+            if not self.open_tags or self.open_tags[-1][0] != tag:
+                self.add("error", "MISNESTED_HTML", f"Unexpected or incorrectly nested </{tag}>")
+                # Recover only through an existing matching open tag.
+                matching = next((i for i in range(len(self.open_tags) - 1, -1, -1)
+                                 if self.open_tags[i][0] == tag), None)
+                if matching is not None:
+                    del self.open_tags[matching:]
+            else:
+                self.open_tags.pop()
+        if self.named_element_stack:
+            matching = next((i for i in range(len(self.named_element_stack) - 1, -1, -1)
+                             if self.named_element_stack[i][0] == tag), None)
+            if matching is not None:
+                del self.named_element_stack[matching:]
         if tag == "title" and self.title_depth:
             self.title_depth -= 1
-        if tag == "label" and self.open_labels:
-            self.open_labels -= 1
+        if tag == "label" and self.label_stack:
+            self.label_stack.pop()
         if tag == "button" and self.button_stack:
             self.button_stack.pop()
         if tag == "a" and self.link_stack:
@@ -187,6 +235,10 @@ class SiteAudit(HTMLParser):
             self.button_stack[-1]["text"].append(data)
         if self.link_stack:
             self.link_stack[-1]["text"].append(data)
+        for label in self.label_stack:
+            label["text"].append(data)
+        for _, element_id in self.named_element_stack:
+            self.element_names[element_id].append(data)
 
     def finish(self) -> list[Finding]:
         if not self.has_lang:
